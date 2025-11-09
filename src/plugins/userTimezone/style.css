@@ -1,0 +1,19 @@
+.vc-user-timezone-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: default;
+}
+
+.vc-user-timezone-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.vc-user-timezone-time {
+    font-weight: 500;
+}
