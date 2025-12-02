@@ -31,13 +31,14 @@ interface UserContextProps {
 }
 
 const UserContextMenuPatch: NavContextMenuPatchCallback = (children, { user }: UserContextProps) => {
-    if (!user) return;
+    if (!user?.id) return;
 
+    const userURL = "<https://discord.com/users/" + user.id + ">";
     children.push(
         <Menu.MenuItem
             id="vc-copy-user-url"
             label="Copy User URL"
-            action={() => copyToClipboard(`<https://discord.com/users/${user.id}>`)}
+            action={() => copyToClipboard(userURL)}
             icon={LinkIcon}
         />
     );
