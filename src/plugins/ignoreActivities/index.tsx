@@ -12,7 +12,7 @@ import { Devs } from "@utils/constants";
 import { Margins } from "@utils/margins";
 import definePlugin, { OptionType } from "@utils/types";
 import { findStoreLazy } from "@webpack";
-import { Button, Forms, showToast, TextInput, Toasts, Tooltip, useEffect, useState } from "@webpack/common";
+import { Button, Forms, React, showToast, TextInput, Toasts, Tooltip, useCallback, useEffect, useMemo, useState } from "@webpack/common";
 
 const enum ActivitiesTypes {
     Game,
@@ -34,14 +34,40 @@ const RunningGameStore = findStoreLazy("RunningGameStore");
 
 const ShowCurrentGame = getUserSettingLazy("status", "showCurrentGame")!;
 
-function ToggleIcon(activity: IgnoredActivity, tooltipText: string, path: string, fill: string) {
+let idsSet = new Set<string>();
+let ignoredActivitiesSet = new Set<string>();
+
+function rebuildCaches() {
+    idsSet = new Set(
+        settings.store.idsList
+            .split(",")
+            .map(id => id.trim())
+            .filter(Boolean)
+    );
+    ignoredActivitiesSet = new Set(
+        settings.store.ignoredActivities.map(act => act.id)
+    );
+}
+
+const ICON_PATH_ON = "M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Zm0-300Zm0 220q113 0 207.5-59.5T832-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280Z";
+const ICON_PATH_OFF = "m644-428-58-58q9-47-27-88t-93-32l-58-58q17-8 34.5-12t37.5-4q75 0 127.5 52.5T660-500q0 20-4 37.5T644-428Zm128 126-58-56q38-29 67.5-63.5T832-500q-50-101-143.5-160.5T480-720q-29 0-57 4t-55 12l-62-62q41-17 84-25.5t90-8.5q151 0 269 83.5T920-500q-23 59-60.5 109.5T772-302Zm20 246L624-222q-35 11-70.5 16.5T480-200q-151 0-269-83.5T40-500q21-53 53-98.5t73-81.5L56-792l56-56 736 736-56 56ZM222-624q-29 26-53 57t-41 67q50 101 143.5 160.5T480-280q20 0 39-2.5t39-5.5l-36-38q-11 3-21 4.5t-21 1.5q-75 0-127.5-52.5T300-500q0-11 1.5-21t4.5-21l-84-82Zm319 93Zm-151 75Z";
+
+const BUTTON_STYLE = { all: "unset", cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center" } as const;
+
+function ToggleIcon({ activity, tooltipText, path, fill, onClick }: {
+    activity: IgnoredActivity;
+    tooltipText: string;
+    path: string;
+    fill: string;
+    onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
     return (
         <Tooltip text={tooltipText}>
             {tooltipProps => (
                 <button
                     {...tooltipProps}
-                    onClick={e => handleActivityToggle(e, activity)}
-                    style={{ all: "unset", cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center" }}
+                    onClick={onClick}
+                    style={BUTTON_STYLE}
                 >
                     <svg
                         width="24"
@@ -56,26 +82,38 @@ function ToggleIcon(activity: IgnoredActivity, tooltipText: string, path: string
     );
 }
 
-const ToggleIconOn = (activity: IgnoredActivity, fill: string) => ToggleIcon(activity, "Disable activity", "M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-146 0-266-81.5T40-500q54-137 174-218.5T480-800q146 0 266 81.5T920-500q-54 137-174 218.5T480-200Zm0-300Zm0 220q113 0 207.5-59.5T832-500q-50-101-144.5-160.5T480-720q-113 0-207.5 59.5T128-500q50 101 144.5 160.5T480-280Z", fill);
-const ToggleIconOff = (activity: IgnoredActivity, fill: string) => ToggleIcon(activity, "Enable activity", "m644-428-58-58q9-47-27-88t-93-32l-58-58q17-8 34.5-12t37.5-4q75 0 127.5 52.5T660-500q0 20-4 37.5T644-428Zm128 126-58-56q38-29 67.5-63.5T832-500q-50-101-143.5-160.5T480-720q-29 0-57 4t-55 12l-62-62q41-17 84-25.5t90-8.5q151 0 269 83.5T920-500q-23 59-60.5 109.5T772-302Zm20 246L624-222q-35 11-70.5 16.5T480-200q-151 0-269-83.5T40-500q21-53 53-98.5t73-81.5L56-792l56-56 736 736-56 56ZM222-624q-29 26-53 57t-41 67q50 101 143.5 160.5T480-280q20 0 39-2.5t39-5.5l-36-38q-11 3-21 4.5t-21 1.5q-75 0-127.5-52.5T300-500q0-11 1.5-21t4.5-21l-84-82Zm319 93Zm-151 75Z", fill);
+function ToggleActivityComponent({ activity, isPlaying = false }: { activity: IgnoredActivity; isPlaying?: boolean; }) {
+    settings.use(["ignoredActivities"]);
 
-function ToggleActivityComponent(activity: IgnoredActivity, isPlaying = false) {
-    const s = settings.use(["ignoredActivities"]);
-    const { ignoredActivities } = s;
+    const onClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+        e.stopPropagation();
+        const index = settings.store.ignoredActivities.findIndex(act => act.id === activity.id);
+        if (index === -1) {
+            settings.store.ignoredActivities.push(activity);
+            ignoredActivitiesSet.add(activity.id);
+        } else {
+            settings.store.ignoredActivities.splice(index, 1);
+            ignoredActivitiesSet.delete(activity.id);
+        }
+    }, [activity]);
 
-    if (ignoredActivities.some(act => act.id === activity.id)) return ToggleIconOff(activity, "var(--status-danger)");
-    return ToggleIconOn(activity, isPlaying ? "var(--green-300)" : "var(--interactive-normal)");
+    const isIgnored = ignoredActivitiesSet.has(activity.id);
+
+    return (
+        <ToggleIcon
+            activity={activity}
+            tooltipText={isIgnored ? "Enable activity" : "Disable activity"}
+            path={isIgnored ? ICON_PATH_OFF : ICON_PATH_ON}
+            fill={isIgnored ? "var(--status-danger)" : (isPlaying ? "var(--green-300)" : "var(--interactive-normal)")}
+            onClick={onClick}
+        />
+    );
 }
 
-function handleActivityToggle(e: React.MouseEvent<HTMLButtonElement, MouseEvent>, activity: IgnoredActivity) {
-    e.stopPropagation();
 
-    const ignoredActivityIndex = settings.store.ignoredActivities.findIndex(act => act.id === activity.id);
-    if (ignoredActivityIndex === -1) settings.store.ignoredActivities.push(activity);
-    else settings.store.ignoredActivities.splice(ignoredActivityIndex, 1);
-}
 
 function recalculateActivities() {
+    rebuildCaches();
     ShowCurrentGame.updateSetting(old => old);
 }
 
@@ -94,6 +132,8 @@ function ImportCustomRPCComponent() {
                         const isAlreadyAdded = idsListPushID?.(id);
                         if (isAlreadyAdded) {
                             showToast("CustomRPC application ID is already added.", Toasts.Type.FAILURE);
+                        } else {
+                            showToast("CustomRPC application ID added successfully.", Toasts.Type.SUCCESS);
                         }
                     }}
                 >
@@ -106,29 +146,29 @@ function ImportCustomRPCComponent() {
 
 let idsListPushID: ((id: string) => boolean) | null = null;
 
-function IdsListComponent(props: { setValue: (value: string) => void; }) {
+function IdsListComponent({ setValue }: { setValue: (value: string) => void; }) {
     const [idsList, setIdsList] = useState<string>(settings.store.idsList ?? "");
 
-    idsListPushID = (id: string) => {
-        const currentIds = new Set(idsList.split(",").map(id => id.trim()).filter(Boolean));
-
-        const isAlreadyAdded = currentIds.has(id) || (currentIds.add(id), false);
-
-        const ids = Array.from(currentIds).join(", ");
-        setIdsList(ids);
-        props.setValue(ids);
-
-        return isAlreadyAdded;
-    };
-
-    useEffect(() => () => {
-        idsListPushID = null;
-    }, []);
-
-    function handleChange(newValue: string) {
+    const handleChange = useCallback((newValue: string) => {
         setIdsList(newValue);
-        props.setValue(newValue);
-    }
+        setValue(newValue);
+    }, [setValue]);
+
+    useEffect(() => {
+        idsListPushID = (id: string) => {
+            if (idsSet.has(id)) return true;
+
+            idsSet.add(id);
+            const ids = Array.from(idsSet).join(", ");
+            setIdsList(ids);
+            setValue(ids);
+            return false;
+        };
+
+        return () => {
+            idsListPushID = null;
+        };
+    }, [setValue]);
 
     return (
         <section>
@@ -169,8 +209,8 @@ const settings = definePluginSettings({
         type: OptionType.COMPONENT,
         default: "",
         onChange(newValue: string) {
-            const ids = new Set(newValue.split(",").map(id => id.trim()).filter(Boolean));
-            settings.store.idsList = Array.from(ids).join(", ");
+            idsSet = new Set(newValue.split(",").map(id => id.trim()).filter(Boolean));
+            settings.store.idsList = Array.from(idsSet).join(", ");
             recalculateActivities();
         },
         component: props => <IdsListComponent setValue={props.setValue} />
@@ -208,12 +248,15 @@ const settings = definePluginSettings({
     ignoredActivities: {
         type: OptionType.CUSTOM,
         default: [] as IgnoredActivity[],
-        onChange: recalculateActivities
+        onChange() {
+            ignoredActivitiesSet = new Set(settings.store.ignoredActivities.map(act => act.id));
+            recalculateActivities();
+        }
     }
 });
 
 function isActivityTypeIgnored(type: number, id?: string) {
-    if (id && settings.store.idsList.includes(id)) {
+    if (id && idsSet.has(id)) {
         return settings.store.listMode === FilterMode.Blacklist;
     }
 
@@ -223,9 +266,8 @@ function isActivityTypeIgnored(type: number, id?: string) {
         case 2: return settings.store.ignoreListening;
         case 3: return settings.store.ignoreWatching;
         case 5: return settings.store.ignoreCompeting;
+        default: return false;
     }
-
-    return false;
 }
 
 export default definePlugin({
@@ -287,16 +329,16 @@ export default definePlugin({
     ],
 
     async start() {
+        rebuildCaches();
+
         if (settings.store.ignoredActivities.length !== 0) {
             const gamesSeen = RunningGameStore.getGamesSeen() as { id?: string; exePath: string; }[];
+            const gamesSeenSet = new Set(gamesSeen.flatMap(game => [game.id, game.exePath].filter(Boolean)));
 
-            for (const [index, ignoredActivity] of settings.store.ignoredActivities.entries()) {
-                if (ignoredActivity.type !== ActivitiesTypes.Game) continue;
-
-                if (!gamesSeen.some(game => game.id === ignoredActivity.id || game.exePath === ignoredActivity.id)) {
-                    settings.store.ignoredActivities.splice(index, 1);
-                }
-            }
+            settings.store.ignoredActivities = settings.store.ignoredActivities.filter(
+                activity => activity.type !== ActivitiesTypes.Game || gamesSeenSet.has(activity.id)
+            );
+            ignoredActivitiesSet = new Set(settings.store.ignoredActivities.map(act => act.id));
         }
     },
 
@@ -304,11 +346,15 @@ export default definePlugin({
         if (isActivityTypeIgnored(props.type, props.application_id)) return false;
 
         if (props.application_id != null) {
-            return !settings.store.ignoredActivities.some(activity => activity.id === props.application_id) || (settings.store.listMode === FilterMode.Whitelist && settings.store.idsList.includes(props.application_id));
-        } else {
+            const isIgnored = ignoredActivitiesSet.has(props.application_id);
+            const isWhitelisted = settings.store.listMode === FilterMode.Whitelist && idsSet.has(props.application_id);
+            return !isIgnored || isWhitelisted;
+        }
+
+        if (props.name) {
             const exePath = RunningGameStore.getRunningGames().find(game => game.name === props.name)?.exePath;
             if (exePath) {
-                return !settings.store.ignoredActivities.some(activity => activity.id === exePath);
+                return !ignoredActivitiesSet.has(exePath);
             }
         }
 
@@ -316,19 +362,29 @@ export default definePlugin({
     },
 
     renderToggleGameActivityButton(props: { id?: string; name: string, exePath: string; }, nowPlaying: boolean) {
+        const activity = useMemo(
+            () => ({ id: props.id ?? props.exePath, name: props.name, type: ActivitiesTypes.Game }),
+            [props.id, props.exePath, props.name]
+        );
+
         return (
             <ErrorBoundary noop>
                 <div style={{ marginLeft: 12, zIndex: 0 }}>
-                    {ToggleActivityComponent({ id: props.id ?? props.exePath, name: props.name, type: ActivitiesTypes.Game }, nowPlaying)}
+                    <ToggleActivityComponent activity={activity} isPlaying={nowPlaying} />
                 </div>
             </ErrorBoundary>
         );
     },
 
     renderToggleActivityButton(props: { id: string; name: string; }) {
+        const activity = useMemo(
+            () => ({ id: props.id, name: props.name, type: ActivitiesTypes.Embedded }),
+            [props.id, props.name]
+        );
+
         return (
             <ErrorBoundary noop>
-                {ToggleActivityComponent({ id: props.id, name: props.name, type: ActivitiesTypes.Embedded })}
+                <ToggleActivityComponent activity={activity} />
             </ErrorBoundary>
         );
     }
